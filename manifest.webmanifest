@@ -1,0 +1,22 @@
+{
+  "name": "RL Yarış Laboratuvarı",
+  "short_name": "RL Yarış",
+  "description": "Araçların ödül/ceza ile pisti en hızlı bitirmeyi öğrendiği pekiştirmeli öğrenme yarış simülasyonu.",
+  "lang": "tr",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "landscape",
+  "background_color": "#0d1117",
+  "theme_color": "#161b22",
+  "categories": ["education", "games", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Çok çekirdekli simülasyon testi</title>
+<style>
+  :root { color-scheme: dark; --bg: #0f1512; --fg: #e6edf3; --mut: #8b949e; --ok: #3fb950; --bad: #f85149; --line: #30363d; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  p { color: var(--mut); margin: 4px 0 12px; max-width: 70ch; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 12px; }
+  label { display: grid; gap: 3px; color: var(--mut); font-size: 12px; }
+  input, select, button { font: inherit; padding: 5px 8px; background: #161b22; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+  button { cursor: pointer; background: #1f6feb; border-color: #1f6feb; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  table { border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  th, td { border-bottom: 1px solid var(--line); padding: 5px 10px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  #log { white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; color: var(--mut); margin-top: 12px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<h1>Çok çekirdekli simülasyon testi</h1>
+<p>Aynı tohumla tek çekirdekli eğitim ile işçili (Web Worker + SharedArrayBuffer) eğitimi karşılaştırır: hız (araç-adım/sn),
+  sonuçların birebir aynılığı (solo modda) ve yarış modu. <span id="iso"></span></p>
+<div class="row">
+  <label>Pist <select id="track"></select></label>
+  <label>Araç <input id="cars" type="number" value="400" min="10" max="4000" step="10" style="width:80px" /></label>
+  <label>Nesil <input id="gens" type="number" value="20" min="1" max="500" style="width:70px" /></label>
+  <label>İşçi sayıları <input id="workers" value="1, 2, auto" style="width:120px" /></label>
+  <label>Algoritma <select id="algo"><option value="ga">GA</option><option value="es">ES</option><option value="cmaes">CMA-ES</option></select></label>
+  <button id="run">Testi başlat</button>
+</div>
+<table id="tbl"><thead><tr><th>Koşu</th><th>Süre (sn)</th><th>Adım</th><th>Araç-adım/sn</th><th>Hızlanma</th><th>Bitirme (ilk→son)</th><th>En iyi tur</th><th>Tek çekirdekle aynı</th></tr></thead><tbody></tbody></table>
+<div id="log"></div>
+
+<script type="module">
+import { defaultConfig, autoTimeLimit, TICK_RATE } from '../src/config.js';
+import { TRACK_DEFS, Track } from '../src/track.js';
+import { Trainer } from '../src/trainer.js';
+import { Simulation } from '../src/sim.js';
+import { ParallelTrainer } from '../src/parallel/ptrainer.js';
+
+const $ = (id) => document.getElementById(id);
+const log = (s) => { $('log').textContent += s + '\n'; console.log(s); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const tracks = new Map();
+const trackOf = (id) => { if (!tracks.has(id)) tracks.set(id, new Track(TRACK_DEFS.find((d) => d.id === id))); return tracks.get(id); };
+
+$('iso').innerHTML = `crossOriginIsolated: <b class="${crossOriginIsolated ? 'ok' : 'bad'}">${crossOriginIsolated}</b> · çekirdek: <b>${navigator.hardwareConcurrency}</b> · varsayılan işçi (400 araç): <b>${ParallelTrainer.defaultWorkers(400)}</b>`;
+for (const d of TRACK_DEFS) $('track').insertAdjacentHTML('beforeend', `<option value="${d.id}" ${d.id === 'kidney' ? 'selected' : ''}>${d.name}</option>`);
+
+function makeCfg(track, o = {}) {
+  const cfg = defaultConfig();
+  cfg.rules.timeLimitSec = autoTimeLimit(track);
+  if (o.mode) cfg.rules.mode = o.mode;
+  if (o.heat) cfg.rules.heatSize = o.heat;
+  return cfg;
+}
+
+function summary(tr, ms, label, cars) {
+  const h = tr.history;
+  const pick = (g) => ({ best: g.best, avg: g.avg, fin: g.finishers, ticks: g.ticks, lap: g.bestLap, contacts: g.contacts, overtakes: g.overtakes, q: g.q });
+  return {
+    label, ms, ticks: tr.totalTicks, carSteps: (tr.totalTicks * cars) / (ms / 1000),
+    finFirst: h.slice(0, 3).reduce((a, g) => a + g.finishRate, 0) / Math.min(3, h.length),
+    finLast: h.slice(-3).reduce((a, g) => a + g.finishRate, 0) / Math.min(3, h.length),
+    bestLap: tr.bestEverLapTicks ? tr.bestEverLapTicks / TICK_RATE : null,
+    hist: h.map(pick),
+    sectors: tr.bestSectors.slice(),
+    ghostLen: tr.ghost ? tr.ghost.length : 0,
+  };
+}
+
+// Tek çekirdek: ana iş parçacığında senkron (arada olay döngüsüne kısa dönüşlerle)
+async function runSingle(o) {
+  const track = trackOf(o.track), cfg = makeCfg(track, o);
+  const tr = new Trainer({ cfg, track, algo: o.algo, carCount: o.cars, seed: o.seed });
+  const t0 = performance.now();
+  let last = t0;
+  while (tr.generation <= o.gens) {
+    tr.tick();
+    if ((tr.totalTicks & 63) === 0 && performance.now() - last > 200) { await sleep(0); last = performance.now(); }
+  }
+  const ms = performance.now() - t0;
+  tr.dispose();
+  return summary(tr, ms, 'Tek çekirdek', tr.sim.N);
+}
+
+// Çok çekirdek: ana döngü her ~10 ms'de pump(Infinity) çağırır (requestAnimationFrame benzeri, hiç beklemeden)
+async function runParallel(o) {
+  const track = trackOf(o.track), cfg = makeCfg(track, o);
+  const tr = new ParallelTrainer({ cfg, track, algo: o.algo, carCount: o.cars, seed: o.seed, workers: o.workers === 'auto' ? 0 : o.workers, chunkCars: o.chunkCars || 0 });
+  const ok = await tr.ready;
+  if (!ok) throw new Error('İşçiler başlatılamadı: ' + (tr.failure && tr.failure.message));
+  const info = { workers: tr.workerCount, slices: tr.slices, slicesOk: slicesValid(tr.slices, tr.sim.N, tr.sim.H) };
+  const t0 = performance.now();
+  const pumpMs = [];
+  while (tr.generation <= o.gens) {
+    const a = performance.now();
+    tr.pump(Infinity);
+    pumpMs.push(performance.now() - a);
+    await sleep(10);
+  }
+  const ms = performance.now() - t0;
+  const loads = tr.workerLoads;
+  tr.dispose();
+  pumpMs.sort((a, b) => a - b);
+  const q = (p) => pumpMs[Math.min(pumpMs.length - 1, Math.floor(p * pumpMs.length))] || 0;
+  const pump = { n: pumpMs.length, med: q(0.5), p99: q(0.99), max: pumpMs.at(-1) || 0 };
+  return { ...summary(tr, ms, `${info.workers} işçi`, tr.sim.N), ...info, pump, loads };
+}
+
+function sameHistory(a, b) {
+  if (a.hist.length < b.hist.length) b = { ...b, hist: b.hist.slice(0, a.hist.length) };
+  if (a.hist.length !== b.hist.length) return `nesil sayısı ${a.hist.length} ≠ ${b.hist.length}`;
+  for (let i = 0; i < a.hist.length; i++) {
+    const x = a.hist[i], y = b.hist[i];
+    for (const k of Object.keys(x)) if (x[k] !== y[k] && !(Number.isNaN(x[k]) && Number.isNaN(y[k]))) return `nesil ${i + 1}: ${k} ${x[k]} ≠ ${y[k]}`;
+  }
+  return true;
+}
+
+function row(r, base) {
+  const sp = base ? r.carSteps / base.carSteps : 1;
+  const same = r.same === undefined ? '–' : r.same === true ? '<span class="ok">evet</span>' : `<span class="bad">${r.same}</span>`;
+  $('tbl').tBodies[0].insertAdjacentHTML('beforeend', `<tr><td>${r.label}</td><td>${(r.ms / 1000).toFixed(2)}</td><td>${r.ticks}</td>
+    <td>${(r.carSteps / 1e6).toFixed(2)} M</td><td>${sp.toFixed(2)}×</td><td>%${(r.finFirst * 100).toFixed(0)} → %${(r.finLast * 100).toFixed(0)}</td>
+    <td>${r.bestLap ? r.bestLap.toFixed(2) + ' sn' : '–'}</td><td>${same}</td></tr>`);
+}
+
+// Hız + doğruluk karşılaştırması
+async function bench(o) {
+  o = { track: 'kidney', cars: 400, gens: 20, seed: 1, algo: 'ga', workers: [1, 2], ...o };
+  const out = { single: null, par: [] };
+  log(`Tek çekirdek: ${o.algo} · ${o.cars} araç · ${o.track} · ${o.gens} nesil…`);
+  out.single = await runSingle(o);
+  row(out.single);
+  for (const k of o.workers) {
+    log(`İşçi: ${k}…`);
+    const r = await runParallel({ ...o, workers: k });
+    r.same = sameHistory(out.single, r);
+    out.par.push(r);
+    row(r, out.single);
+  }
+  return out;
+}
+
+// Parçalar tüm araçları tam bir kez kapsıyor mu, seriler (H) bölünmüyor mu
+function slicesValid(slices, N, H) {
+  const seen = new Uint8Array(N);
+  for (const w of slices) for (const [s, c] of w) {
+    if (s % H !== 0) return false;
+    if (c % H !== 0 && s + c !== N) return false; // yalnızca sonuncu (kısmi seri) H'nin katı olmayabilir
+    for (let i = s; i < s + c; i++) { if (seen[i]) return false; seen[i] = 1; }
+  }
+  return seen.every((v) => v === 1);
+}
+
+// Yarış modu: seriler işçiler arasında bölünmemeli; temas/sollama sayılmalı
+async function raceTest(o) {
+  o = { track: 'kidney', cars: 400, gens: 6, seed: 3, algo: 'ga', workers: 2, mode: 'race', heat: 6, ...o };
+  const r = await runParallel(o);
+  r.slicesOk = slicesValid(r.slices, o.cars, o.heat);
+  r.contacts = r.hist.reduce((a, g) => a + (g.contacts || 0), 0);
+  r.overtakes = r.hist.reduce((a, g) => a + (g.overtakes || 0), 0);
+  log(`Yarış modu: dilimler ${JSON.stringify(r.slices)} → seri sınırları ${r.slicesOk ? 'doğru' : 'YANLIŞ'}; temas ${r.contacts}, sollama ${r.overtakes}`);
+  return r;
+}
+
+// Çalışma zamanı işlemleri: zorla nesil sonu, duraklatma, canlı ayar, beyin yükleme, yeniden kurma, pist değiştirme
+async function opsTest(o = {}) {
+  const res = {};
+  const track = trackOf(o.track || 'kidney'), cfg = makeCfg(track);
+  const tr = new ParallelTrainer({ cfg, track, algo: o.algo || 'ga', carCount: o.cars || 200, seed: 5, workers: o.workers || 2 });
+  res.ready = await tr.ready;
+  const until = async (fn, ms = 20000) => { const t0 = performance.now(); while (!fn()) { if (performance.now() - t0 > ms) return false; tr.pump(Infinity); await sleep(10); } return true; };
+  // 1) birkaç nesil
+  res.gens = await until(() => tr.generation >= 4);
+  // 2) zorla nesil sonu (çalışırken)
+  await until(() => tr.sim.tick > 30);
+  const g0 = tr.generation;
+  tr.forceEndGeneration();
+  res.forceEnd = await until(() => tr.generation === g0 + 1 && tr.sim.tick < 30, 5000);
+  // 3) duraklatma: pump çağrılmazsa izin süresi dolunca durur
+  await sleep(500);
+  const tA = tr.totalTicks; await sleep(400); const tB = tr.totalTicks;
+  res.pauseStops = tA === tB && !tr.busy;
+  // 4) duraklatılmışken zorla nesil sonu → senkron
+  const g1 = tr.generation; tr.forceEndGeneration(); res.forceEndIdleSync = tr.generation === g1 + 1;
+  // 5) canlı ayar: süre limiti düşür → işçiler 2 sn'de bitirir
+  cfg.rules.timeLimitSec = 2;
+  const g2 = tr.generation;
+  await until(() => tr.generation >= g2 + 2);
+  res.cfgLive = tr.history.at(-1).ticks <= 2 * TICK_RATE + 1;
+  cfg.rules.timeLimitSec = autoTimeLimit(track);
+  // 6) beyin yükleme → nesil baştan yeni politikalarla
+  const brain = tr.algo.brainOf(3);
+  await until(() => tr.sim.tick > 20);
+  const g3 = tr.generation, s3 = tr._seq;
+  res.loadBrain = tr.loadBrain(brain);
+  res.loadBrainRestart = await until(() => tr._seq > s3, 5000) && tr.generation === g3;
+  // 7) yarış moduna geçiş (rebuildSim)
+  cfg.rules.mode = 'race'; cfg.rules.heatSize = 5;
+  tr.rebuildSim();
+  res.rebuildRace = tr.sim.race && slicesValid(tr.slices, tr.sim.N, 5);
+  const g4 = tr.generation;
+  res.raceGens = await until(() => tr.generation >= g4 + 2);
+  cfg.rules.mode = 'solo';
+  tr.rebuildSim();
+  // 8) pist değiştirme
+  const t2 = trackOf('oval');
+  cfg.rules.timeLimitSec = autoTimeLimit(t2);
+  tr.setTrack(t2);
+  const g5 = tr.generation;
+  res.setTrack = await until(() => tr.generation >= g5 + 2) && tr.sim.track === t2;
+  // 9) tüm Simulation.arraySpec dizileri paylaşımlı mı
+  const spec = Simulation.arraySpec(cfg);
+  res.allShared = Object.keys(spec).every((k) => tr.sim[k] && tr.sim[k].buffer instanceof SharedArrayBuffer && tr.sim[k].length === tr.sim.N * spec[k][1])
+    && tr.sim.heat.buffer instanceof SharedArrayBuffer;
+  // 10) kapatma
+  tr.dispose();
+  res.disposed = tr.workerCount === 0;
+  log('İşlem testleri: ' + JSON.stringify(res));
+  return res;
+}
+
+// Oturumu sürdürme (src/persist.js): tek çekirdekte k nesil → kayıt → ParallelTrainer'a yükle → m nesil daha.
+// Tek çekirdekli eğitimin kesintisiz devamıyla birebir aynı olmalı (politikalar + RNG + başlangıç noktası).
+async function resumeTest(o) {
+  o = { track: 'kidney', cars: 200, k: 4, m: 4, seed: 11, algo: 'ga', workers: 2, ...o };
+  let persist;
+  try { persist = await import('../src/persist.js'); } catch (e) { return { skipped: 'persist.js yok: ' + e.message }; }
+  const track = trackOf(o.track);
+  const cfgA = makeCfg(track);
+  const a = new Trainer({ cfg: cfgA, track, algo: o.algo, carCount: o.cars, seed: o.seed });
+  let snap = null;
+  a.on('generation', () => {
+    if (a.generation === o.k + 1 && !snap) snap = persist.snapshotTrainer({ trainer: a, cfg: cfgA, algoName: o.algo, carCount: o.cars, seed: o.seed });
+  });
+  while (a.generation <= o.k + o.m) { a.tick(); if ((a.totalTicks & 1023) === 0) await sleep(0); }
+  const b = new ParallelTrainer({ cfg: makeCfg(track), track, algo: o.algo, carCount: o.cars, seed: 999, workers: o.workers });
+  const restored = persist.restoreTrainer(b, snap);
+  const t0 = performance.now();
+  while (b.generation <= o.k + o.m && performance.now() - t0 < 60000) { b.pump(Infinity); await sleep(10); }
+  const pick = (h) => h.slice(o.k, o.k + o.m).map((g) => ({ best: g.best, avg: g.avg, fin: g.finishers, ticks: g.ticks, lap: g.bestLap, q: g.q }));
+  const same = sameHistory({ hist: pick(a.history) }, { hist: pick(b.history) });
+  // dışarıdan algo.setState → işçiler yeni politikalarla nesli baştan sürer
+  const s0 = b._seq, g0 = b.generation;
+  const okState = b.algo.setState(b.algo.getState());
+  for (let i = 0; i < 100 && b._seq === s0; i++) { b.pump(Infinity); await sleep(10); }
+  const resync = okState && b._seq > s0 && b.generation === g0;
+  b.dispose();
+  a.dispose();
+  const res = { restored, same, resync, gens: b.history.length };
+  log('Sürdürme testi: ' + JSON.stringify(res));
+  return res;
+}
+
+// İşçi hatası → tek çekirdeğe dönüş: eğitim ana iş parçacığında (pump içinde, süre bütçesiyle) sürer.
+// Beklenen tek konsol uyarısı: "[Çok çekirdekli] Tek çekirdekli simülasyona dönülüyor".
+async function fallbackTest(o = {}) {
+  const track = trackOf(o.track || 'kidney'), cfg = makeCfg(track);
+  const tr = new ParallelTrainer({ cfg, track, algo: 'ga', carCount: 120, seed: 9, workers: 2 });
+  const res = { ready: await tr.ready };
+  const until = async (fn, ms = 20000) => { const t0 = performance.now(); while (!fn()) { if (performance.now() - t0 > ms) return false; tr.pump(Infinity); await sleep(10); } return true; };
+  res.gen2 = await until(() => tr.generation >= 2);
+  // hatalı mesaj: işçi istisna fırlatır → 'err' → _fail
+  tr.workers[0].worker.postMessage({ type: 'gen', id: 1e9, seq: 0, sizes: [3, 2], params: new Float32Array(1) });
+  res.fellBack = await until(() => !tr.parallel, 5000) && tr.workerCount === 0 && !!tr.failure;
+  res.plainSim = !(tr.sim.x.buffer instanceof SharedArrayBuffer);
+  const g = tr.generation;
+  let maxPump = 0;
+  res.continues = await until(() => { const a = performance.now(); tr.pump(Infinity, 12); maxPump = Math.max(maxPump, performance.now() - a); return tr.generation >= g + 2; });
+  res.budgetRespected = maxPump < 40;
+  res.tickWorks = tr.tick() === true;
+  tr.forceEndGeneration();
+  res.forceEnd = tr.generation >= g + 3;
+  tr.dispose();
+  log('Tek çekirdeğe dönüş: ' + JSON.stringify(res));
+  return res;
+}
+
+// Bölümleme kenar durumları: kapsama, seri sınırları, tek araçlı son seri
+function planTest() {
+  const bad = [];
+  for (const N of [2, 3, 7, 13, 50, 97, 200, 401, 1000, 2000]) for (const H of [1, 2, 5, 6, 12]) for (const K of [1, 2, 3, 4, 8, 16]) {
+    const p = ParallelTrainer.plan(N, H, K);
+    const lastHeat = N - Math.floor((N - 1) / H) * H;
+    const ok = slicesValid(p, N, H) && p.length >= 1 && p.length <= K && p.every((w) => w.length > 0) &&
+      (H === 1 || p.flat().every(([, c]) => c >= 2 || N < 2));
+    if (!ok) bad.push({ N, H, K, lastHeat, p: JSON.stringify(p) });
+  }
+  return bad;
+}
+
+window.parTest = { bench, raceTest, opsTest, planTest, resumeTest, fallbackTest, runSingle, runParallel };
+
+$('run').onclick = async () => {
+  $('run').disabled = true;
+  $('tbl').tBodies[0].innerHTML = '';
+  $('log').textContent = '';
+  try {
+    const workers = $('workers').value.split(/[ ,;]+/).filter(Boolean).map((s) => (s === 'auto' ? 'auto' : +s)).filter((v) => v === 'auto' || v > 0);
+    await bench({ track: $('track').value, cars: +$('cars').value, gens: +$('gens').value, algo: $('algo').value, workers });
+    await raceTest({ track: $('track').value, cars: +$('cars').value, workers: workers.find((w) => w !== 1) || 2 });
+    log('Bitti.');
+  } catch (e) {
+    log('HATA: ' + e.message);
+  } finally {
+    $('run').disabled = false;
+  }
+};
+</script>
+</body>
+</html>

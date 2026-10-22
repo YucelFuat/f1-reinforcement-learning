@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RL Yarış Laboratuvarı</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles-infra.css" />
+  <link rel="stylesheet" href="styles-replay.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#161b22" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◆</span>
+      <div>
+        <h1>RL Yarış Laboratuvarı</h1>
+        <small id="algoLabel">Genetik Algoritma</small>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="btnPlay" class="primary" title="Başlat / Duraklat (Boşluk)">▶ Başlat</button>
+      <button id="btnEndGen" title="Nesli şimdi bitir (N)">⏭ Nesli bitir</button>
+      <button id="btnReset" title="Tüm öğrenmeyi sıfırla">↺ Sıfırla</button>
+      <div class="seg" id="speedSeg" title="Simülasyon hızı (1-6)">
+        <button data-speed="1" class="on">1x</button>
+        <button data-speed="2">2x</button>
+        <button data-speed="5">5x</button>
+        <button data-speed="10">10x</button>
+        <button data-speed="25">25x</button>
+        <button data-speed="max">Maks</button>
+      </div>
+      <div class="seg replay-seg">
+        <button id="btnCockpit" class="accent" title="Eğitimi duraklat ve en hızlı turu 3B kokpitten izle (V)">◉ En iyi sürüşü izle (3B)</button>
+        <button id="btnCockpitTop5" title="En iyi 5 farklı sürüşü aynı anda 3B izle (Shift+V)">İlk 5</button>
+        <button id="btnCockpitHeat" title="Yarış modunda en iyi seriyi (araçlar arası temas ve sollamalarla) 3B izle (B)">Seri</button>
+      </div>
+      <button id="btnRender" title="Çizimi kapatıp tüm CPU'yu eğitime ver">Çizim: Açık</button>
+      <button id="btnDev" title="Geliştirici modu (F3)">⚙ Geliştirici</button>
+      <button id="btnExperiments" title="Deneyleri kaydet, karşılaştır ve aynı ayarlarla yeniden üret (E)">▤ Deneyler</button>
+      <button id="btnInstall" class="pwa-install" hidden title="Uygulamayı bilgisayara yükle: masaüstü kısayolu ve kendi penceresi">⤓ Uygulamayı yükle</button>
+    </div>
+  </header>
+
+  <aside class="left panel">
+    <details open>
+      <summary>Simülasyon</summary>
+      <label>Algoritma
+        <select id="selAlgo"></select>
+      </label>
+      <label>Araç sayısı
+        <select id="selCars">
+          <option>50</option><option>100</option><option>150</option><option selected>200</option>
+          <option>300</option><option>500</option><option>750</option><option>1000</option>
+          <option>1500</option><option>2000</option>
+        </select>
+      </label>
+      <label>Pist
+        <select id="selTrack"></select>
+      </label>
+      <div class="row2">
+        <button id="btnRandomTrack">Yeni rastgele pist</button>
+        <button id="btnEditTrack">Pist çiz</button>
+      </div>
+      <p class="hint">Pist değiştirmek beyinleri korur — öğrendiklerini yeni pistte deneyebilirsin.</p>
+      <div id="rulesBox"></div>
+      <label class="seed-row">Tohum (seed)
+        <span><input type="number" id="inpSeed" min="0" step="1" title="Aynı tohum + aynı ayarlar = aynı eğitim (GA / ES / CMA-ES'te birebir)" /><button id="btnSeedRnd" title="Rastgele tohum">Rastgele</button></span>
+      </label>
+      <label class="checks"><input type="checkbox" id="chkMulti" /> Çok çekirdekli simülasyon <span class="restart" title="Yeniden başlatma gerekir">↻</span></label>
+      <button id="btnApply" class="primary wide">Uygula ve yeniden başlat</button>
+      <p class="hint">Algoritma, araç sayısı ve ağ boyutu yeniden başlatma gerektirir (↻ işaretli).</p>
+    </details>
+
+    <details open>
+      <summary>Otomatik ayar</summary>
+      <div class="checks">
+        <label><input type="checkbox" id="chkAuto" checked /> Algoritma ve ödül/ceza değerlerini otomatik ayarla</label>
+      </div>
+      <div class="auto-status" id="autoStatus"></div>
+      <ul class="auto-log" id="autoLog"></ul>
+      <p class="hint">Uzun süre gelişme olmazsa bir değeri değiştirip birkaç nesil dener. Sonuç daha iyiyse tutar, değilse geri alır. Karşılaştırma ödülden bağımsız bir skorla yapılır: en iyi araçların ilerlemesi, bitirme oranı ve tur süresi.</p>
+    </details>
+
+    <details open>
+      <summary>Ödül / Ceza</summary>
+      <div id="rewardBox"></div>
+      <p class="hint">Değişiklikler anında uygulanır.</p>
+    </details>
+
+    <details>
+      <summary>Algoritma ayarları</summary>
+      <div id="algoBox"></div>
+    </details>
+
+    <details open>
+      <summary>Araç fiziği</summary>
+      <div id="physBox"></div>
+    </details>
+
+    <details>
+      <summary>Lastik, yakıt, ERS, DRS ve strateji</summary>
+      <div id="carBox"></div>
+    </details>
+
+    <details open>
+      <summary>Görünüm</summary>
+      <div class="checks">
+        <label><input type="checkbox" id="chkIso" /> İzometrik (2.5D) görünüm <kbd>I</kbd></label>
+        <label><input type="checkbox" id="chkRays" checked /> Sensör ışınları <kbd>R</kbd></label>
+        <label><input type="checkbox" id="chkFollow" /> Lideri takip et <kbd>F</kbd></label>
+        <label><input type="checkbox" id="chkHeat" checked /> Çarpma ısı haritası <kbd>H</kbd></label>
+        <label><input type="checkbox" id="chkGhost" checked /> Önceki şampiyonun izi</label>
+        <label><input type="checkbox" id="chkDead" checked /> Elenen araçları göster</label>
+        <label><input type="checkbox" id="chkNN" checked /> Sinir ağı görselleştirme</label>
+      </div>
+      <button id="btnFit" class="wide">Kamerayı sığdır</button>
+    </details>
+
+    <details>
+      <summary>Kayıt</summary>
+      <div class="row2">
+        <button id="btnSave">Tarayıcıya kaydet</button>
+        <button id="btnLoad">Tarayıcıdan yükle</button>
+      </div>
+      <div class="row2">
+        <button id="btnExport">JSON indir</button>
+        <button id="btnImport">JSON yükle</button>
+      </div>
+      <input type="file" id="fileImport" accept=".json,application/json" hidden />
+      <p class="hint">Tüm zamanların en iyi beyni kaydedilir. GA ve ES beyinleri birbirine aktarılabilir.</p>
+      <div class="row2">
+        <button id="btnSessionSave" title="Eğitimin tamamını (ayarlar, beyinler, geçmiş) şimdi kaydet">Oturumu kaydet</button>
+        <button id="btnSessionClear" title="Kaldığın yerden devam kaydını sil">Oturum kaydını sil</button>
+      </div>
+      <p class="hint">Eğitim her 30 sn'de ve sekme kapanırken tarayıcıya otomatik kaydedilir. Açılışta kaldığın yerden devam edebilirsin.</p>
+    </details>
+  </aside>
+
+  <main class="stage">
+    <canvas id="view"></canvas>
+    <div id="dev" class="dev" hidden>
+      <div class="dev-head">Geliştirici modu <span>F3</span></div>
+      <canvas class="dev-spark"></canvas>
+      <div class="dev-legend"><i style="background:#3987e5"></i>sim <i style="background:#d95926"></i>çizim <i style="background:rgba(255,255,255,.3)"></i>kare</div>
+      <div class="dev-body"></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#4fc3f7"></i>Yarışıyor</span>
+      <span><i style="background:#c39bff"></i>Önceki şampiyon / ortalama politika</span>
+      <span><i style="background:#ffd54f"></i>Bitirdi</span>
+      <span><i style="background:#e57373"></i>Çarptı</span>
+      <span><i style="background:#ff4081"></i>Seçili</span>
+      <span class="lg-drs"><i style="background:#22c55e"></i>DRS bölgesi</span>
+    </div>
+    <div class="hud" id="hud"></div>
+    <div id="editor" class="editor" hidden>
+      <b>Pist çizim modu</b>
+      <p>Pist üzerinde saat yönünde ya da tersine tıklayarak kontrol noktaları ekle (en az 6). İlk nokta başlangıç çizgisidir.</p>
+      <label>Pist yarı genişliği <input type="range" id="edWidth" min="30" max="60" value="42" /> <span id="edWidthV">42</span></label>
+      <div class="row3">
+        <button id="edUndo">Geri al</button>
+        <button id="edCancel">İptal</button>
+        <button id="edDone" class="primary">Pisti oluştur</button>
+      </div>
+      <div id="edMsg" class="hint"></div>
+    </div>
+    <div id="toast" class="toast" hidden></div>
+  </main>
+
+  <aside class="right panel">
+    <section class="stats" id="stats"></section>
+    <section class="analysis" id="analysis"></section>
+    <section class="algo-desc" id="algoDesc"></section>
+    <section class="chart">
+      <h3>Ödül (fitness)</h3>
+      <div class="clegend"><span><i style="background:#3987e5"></i>En iyi</span><span><i style="background:#d95926"></i>Ortalama</span></div>
+      <canvas id="chartFit"></canvas>
+    </section>
+    <section class="chart">
+      <h3>Başarı oranı (%)</h3>
+      <div class="clegend"><span><i style="background:#199e70"></i>Bitiren</span><span><i style="background:#9085e9"></i>Ort. ilerleme</span></div>
+      <canvas id="chartFin"></canvas>
+    </section>
+    <section class="chart">
+      <h3>En iyi tur süresi (sn) — düşük daha iyi</h3>
+      <canvas id="chartLap"></canvas>
+    </section>
+    <section class="chart nn">
+      <h3>Seçili aracın beyni <small id="selInfo"></small></h3>
+      <canvas id="nnCanvas"></canvas>
+      <p class="hint">Turuncu: pozitif sinyal · Mavi: negatif sinyal. Pistte bir araca tıklayarak seç.</p>
+    </section>
+  </aside>
+
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }</script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

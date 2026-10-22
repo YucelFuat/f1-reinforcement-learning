@@ -1,0 +1,112 @@
+/* Altyapı arayüzü: deney yöneticisi, "kaldığın yerden devam et" kartı, uygulama yükleme düğmesi.
+   styles.css'teki renk değişkenlerini (--bg, --panel, --line, --text, --muted …) kullanır. */
+
+/* ---------- deney yöneticisi ---------- */
+.xp-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(1, 4, 9, 0.62); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 16px; overflow: auto;
+}
+.xp-modal {
+  width: min(1240px, 100%); max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
+  background: var(--bg, #0d1117); color: var(--text, #e6edf3);
+  border: 1px solid var(--line, #2a313b); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.xp-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line, #2a313b);
+  background: var(--panel, #161b22); border-radius: 12px 12px 0 0;
+}
+.xp-head b { font-size: 15px; display: block; }
+.xp-head span { color: var(--muted, #8b949e); font-size: 12px; }
+.xp-x { background: transparent; border: 1px solid transparent; font-size: 15px; padding: 4px 9px; }
+.xp-x:hover { border-color: var(--line, #2a313b); }
+.xp-body { overflow-y: auto; padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.xp-card { background: var(--panel, #161b22); border: 1px solid var(--line, #2a313b); border-radius: 10px; padding: 10px 12px 12px; }
+.xp-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.xp-card h4 small { color: var(--muted, #8b949e); font-weight: 400; }
+.xp-card h4.xp-sub { margin: 14px 0 6px; }
+.xp-card h5 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--text, #e6edf3); }
+.xp-cur { color: var(--muted, #8b949e); font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.xp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #3fb950); display: inline-block; }
+.xp-save-row { display: flex; gap: 8px; }
+.xp-save-row input, .xp-notes {
+  flex: 1; min-width: 0; width: 100%;
+  background: var(--panel-2, #1c232c); border: 1px solid var(--line, #2a313b); border-radius: 7px;
+  padding: 6px 9px; color: var(--text, #e6edf3); font: inherit;
+}
+.xp-notes { margin-top: 8px; resize: vertical; min-height: 38px; display: block; }
+.xp-save-row input:focus, .xp-notes:focus { outline: none; border-color: #388bfd; }
+.xp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.xp-toolbar h4 { margin: 0; }
+.xp-sp { flex: 1; }
+.xp-msg { min-height: 0; font-size: 12px; margin: 0 0 6px; }
+.xp-msg:empty { display: none; }
+.xp-msg.ok { color: #aff5b4; }
+.xp-msg.err { color: #ffaba8; }
+.xp-table-wrap { overflow-x: auto; border: 1px solid var(--line, #2a313b); border-radius: 8px; }
+.xp-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.xp-table th, .xp-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line, #2a313b); vertical-align: middle; }
+.xp-table thead th { background: var(--panel-2, #1c232c); color: var(--muted, #8b949e); font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
+.xp-table tbody tr:last-child td { border-bottom: 0; }
+.xp-table tbody tr:hover td { background: rgba(255, 255, 255, 0.025); }
+.xp-table tr.sel td { background: rgba(56, 139, 253, 0.07); }
+.xp-table tr.xp-new td { animation: xpnew 2.2s ease-out; }
+@keyframes xpnew { from { background: rgba(63, 185, 80, 0.25); } to { background: transparent; } }
+.xp-table .num { text-align: right; }
+.xp-table .nowrap { white-space: nowrap; }
+.xp-name-cell b { display: block; font-weight: 600; }
+.xp-name-cell small { display: block; color: var(--muted, #8b949e); font-size: 11px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xp-c-sel { width: 34px; }
+.xp-check { display: inline-flex; align-items: center; gap: 5px; margin: 0; cursor: pointer; color: inherit; }
+.xp-check i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; background: transparent; border: 1px solid var(--line, #2a313b); }
+.xp-check input { margin: 0; accent-color: #388bfd; }
+.xp-acts { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px; }
+.xp-acts button, .xp-toolbar button { padding: 4px 8px; font-size: 12px; }
+.xp-acts button:disabled, .xp-toolbar button:disabled, .xp-save button:disabled { opacity: 0.45; cursor: not-allowed; }
+.xp-acts .xp-del:hover { border-color: var(--bad, #f85149); color: #ffaba8; }
+.xp-empty { color: var(--muted, #8b949e); text-align: center; padding: 18px 8px !important; font-size: 12px; }
+.xp-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin-bottom: 10px; }
+.xp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.xp-legend small { color: var(--muted, #8b949e); }
+.xp-legend i, .xp-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.xp-sw { margin-right: 6px; vertical-align: -1px; }
+.xp-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.xp-chart canvas { width: 100%; height: 180px; display: block; background: #12171e; border-radius: 6px; }
+.xp-nochart { height: 180px; display: grid; place-items: center; background: #12171e; border-radius: 6px; color: var(--muted, #8b949e); font-size: 12px; }
+.xp-sec td { background: var(--panel-2, #1c232c); color: #58a6ff; font-weight: 600; font-size: 11.5px; }
+.xp-key { color: var(--muted, #8b949e); white-space: nowrap; }
+.xp-chg { color: #ffd58a; font-weight: 600; }
+.xp-hint { color: var(--muted, #8b949e); font-size: 11.5px; margin: 6px 0 0; }
+@media (max-width: 900px) {
+  .xp-charts { grid-template-columns: 1fr; }
+  .xp-overlay { padding: 8px; }
+  .xp-modal { max-height: calc(100vh - 16px); }
+}
+
+/* ---------- "kaldığın yerden devam et" kartı ---------- */
+.rs-banner {
+  position: fixed; left: 50%; top: 70px; transform: translateX(-50%); z-index: 150;
+  display: flex; align-items: center; gap: 12px; max-width: min(760px, calc(100vw - 24px));
+  background: rgba(22, 27, 34, 0.97); border: 1px solid #388bfd; border-radius: 12px;
+  padding: 10px 14px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  animation: rsin 0.25s ease-out;
+}
+.rs-banner.rs-out { opacity: 0; transition: opacity 0.18s; }
+@keyframes rsin { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.rs-icon { font-size: 22px; color: #58a6ff; }
+.rs-text { flex: 1; min-width: 0; }
+.rs-text b { display: block; font-size: 13.5px; }
+.rs-text span { display: block; color: var(--muted, #8b949e); font-size: 12px; font-variant-numeric: tabular-nums; }
+.rs-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.rs-actions .rs-del:hover { border-color: var(--bad, #f85149); color: #ffaba8; }
+@media (max-width: 700px) {
+  .rs-banner { flex-wrap: wrap; }
+}
+
+/* ---------- uygulama yükleme düğmesi ---------- */
+.pwa-install { border-color: #2ea043; color: #aff5b4; }
+.pwa-install:hover { background: #1a2e1f; border-color: #3fb950; }

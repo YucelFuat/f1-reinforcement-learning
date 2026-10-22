@@ -1,0 +1,18 @@
+{
+  "name": "reinforcement-game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pekiştirmeli öğrenme yarış simülasyonu (GA / ES / CMA-ES / PPO / SAC)",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "app": "node server.js --app",
+    "train": "node tools/headless.js",
+    "test": "node tests/run.js",
+    "test:fast": "node tests/run.js --fast"
+  },
+  "license": "MIT"
+}

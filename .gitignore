@@ -1,0 +1,47 @@
+# ---- Bağımlılıklar ----
+# Proje bağımlılıksızdır; yanlışlıkla "npm install" çalıştırılırsa oluşanlar
+node_modules/
+npm-debug.log*
+*.log
+
+# ---- Eğitim ve analiz çıktıları ----
+# tools/headless.js --out ile kaydedilen beyinler (ör. beyin.json)
+/beyin*.json
+/*-beyin*.json
+# 3B tekrardaki "Verileri indir" ZIP'leri yanlışlıkla klasöre kaydedilirse
+/*.zip
+# tools/fastf1_export.py çıktıları (ör. 2024_Monza_Q_LEC_tur18.csv) ve önbelleği
+/*.csv
+.fastf1_onbellek/
+fastf1_cache/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- Blender yedekleri ----
+*.blend1
+*.blend2
+
+# ---- Tarayıcı testleri (Playwright) ----
+test-results/
+playwright-report/
+
+# ---- Ortam / gizli ayarlar ----
+.env
+.env.*
+
+# ---- Editör ----
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---- İşletim sistemi ----
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+.DS_Store
